@@ -53,7 +53,7 @@ def main(action, filename, fit_type):
         process = subprocess.Popen(
             ["fittotcx", filename], stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        (data, _) = process.communicate()
+        data, _ = process.communicate()
     except OSError as e:
         print(
             "Could not run Convert to TCX - fittotcx",

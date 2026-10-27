@@ -31,14 +31,14 @@ import os
 import sys
 import traceback
 
-from ant.fs.manager import (
+from openant.fs.manager import (
     Application,
     AntFSAuthenticationException,
     AntFSTimeException,
     AntFSDownloadException,
 )
-from ant.fs.manager import AntFSUploadException
-from ant.fs.file import File
+from openant.fs.manager import AntFSUploadException
+from openant.fs.file import File
 
 from . import utilities
 from . import scripting
@@ -359,11 +359,11 @@ def main():
     # Set up logging
     _logger.setLevel(logging.DEBUG)
 
-    # If you add new module/logger name longer than the 16 characters
+    # If you add new module/logger name longer than the 22 characters
     # just increase the value after %(name).
-    # The longest module/logger name now is "ant.easy.channel".
+    # The longest module/logger name now is "openant.easy.exception".
     formatter = logging.Formatter(
-        fmt="%(threadName)-10s %(asctime)s  %(name)-16s"
+        fmt="%(threadName)-10s %(asctime)s  %(name)-22s"
         "  %(levelname)-8s  %(message)s (%(filename)s:%(lineno)d)"
     )
 

@@ -4,13 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-`antfs-cli` downloads FIT files (activities, courses, settings, etc.) from ANT-FS sport watches over an ANT USB stick, and can optionally upload local FIT files back to the device. It is a thin application layer on top of [openant](https://github.com/Tigge/openant) (imported as `ant`), which does all the USB/ANT/ANT-FS protocol work.
+`antfs-cli` downloads FIT files (activities, courses, settings, etc.) from ANT-FS sport watches over an ANT USB stick, and can optionally upload local FIT files back to the device. It is a thin application layer on top of [openant](https://github.com/Tigge/openant) (imported as `openant`; versions before 1.0 used `ant`), which does all the USB/ANT/ANT-FS protocol work.
 
 ## Commands
 
 ```sh
-pip install -r requirements.txt          # installs openant from git
-pip install -e .                         # installs the `antfs-cli` entry point
+pip install -e .                         # installs openant and the `antfs-cli` entry point
 
 python3 -m unittest discover tests        # run all tests
 python3 -m unittest tests.test_utilities.BasicUtilityTest.test_config_dir   # single test
@@ -18,14 +17,14 @@ python3 -m unittest tests.test_utilities.BasicUtilityTest.test_config_dir   # si
 black .                                  # format (CI runs psf/black and fails on diffs)
 ```
 
-CI (`.github/workflows/build.yml`) runs `black` as a lint check, then tests via `setup.py test` on Python 3.6–3.9, then `setup.py install` and `antfs-cli --help` as a smoke test. Black is configured in `pyproject.toml` (line length 88, target py37).
+All packaging metadata lives in `pyproject.toml` (there is no `setup.py`); Python 3.10+ is required. CI (`.github/workflows/build.yml`) runs `black` as a lint check, then on Python 3.10–3.14 installs the package, runs `antfs-cli --help` as a smoke test, runs the tests under coverage (uploaded to Coveralls) and builds the sdist/wheel. Black is configured in `pyproject.toml` (line length 88, target py310).
 
 Running the program for real requires an ANT USB stick and a watch in range; there are no hardware mocks, so the tests only cover `utilities.py`.
 
 ## Architecture
 
 - `antfs_cli/program.py` — everything of substance.
-  - `AntFSCLI` subclasses openant's `ant.fs.manager.Application` and implements its callback-driven state machine: `setup_channel` → `on_link` → `on_authentication` → `on_transport`. `main()` builds it and calls `start()`/`stop()`.
+  - `AntFSCLI` subclasses openant's `openant.fs.manager.Application` and implements its callback-driven state machine: `setup_channel` → `on_link` → `on_authentication` → `on_transport`. `main()` builds it and calls `start()`/`stop()`.
   - `on_authentication` reuses a stored passkey (`authfile`) or pairs and writes a new one (`--pair` forces pairing).
   - `on_transport` sets the watch time, diffs the device directory against local files by filename, downloads files that are missing locally *or not yet archived on the watch*, and (with `--upload`) uploads local-only files, then renames them to match the index the device assigned.
   - `_directories` maps local subfolder names to `File.Identifier` FIT sub-types; it drives both which folders are created and which remote files are considered. Adding support for a new FIT type means adding an entry here.

@@ -14,13 +14,15 @@ avoid having to re-sync.
 Requirements
 ------------
 
-- [openant >= 0.4](https://github.com/Tigge/openant)
+- Python 3.10 or newer
+- [openant >= 1.3](https://github.com/Tigge/openant) (installed automatically)
 
 Installation
 ------------
 
-Run `sudo python setup.py install` to install ANT-FS Command Line Interface. This
-will install an `antfs-cli` binary in `/usr/bin` or similar.
+From a checkout of this repository, run `pipx install .` (or
+`pip install --user .`) to install ANT-FS Command Line Interface. This will
+install an `antfs-cli` command on your `PATH`.
 
 
 Usage
@@ -42,7 +44,7 @@ To setup the activity upload, follow these steps:
 
  1. Install upload extra dependecies
     ```
-    sudo pip install antfs-cli[upload]
+    pip install --user ".[upload]"
     ```
  2. Setup your Garmin Connect credentials in `~/.guploadrc`
     ```
@@ -63,7 +65,7 @@ To setup the activity upload, follow these steps:
 
  1. Install upload extra dependecies
     ```
-    sudo pip install stravalib
+    pip install --user stravalib
     ```
  2. Run the script `scripts/40-upload_to_strava.py` to fetch your Strava credentials. Follow the instructions to authorize [drpexe-uploader](https://github.com/mscansian/drpexe-uploader) to upload files on your behalf.
     ```
