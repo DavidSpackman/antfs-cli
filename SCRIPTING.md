@@ -32,7 +32,7 @@ Example
     def upload(action, filename, fittype):
         # if we downloaded a new activity
         if action == "DOWNLOAD" and fittype == 4:
-            data = open(filename, 'b').read()
+            data = open(filename, 'rb').read()
             # upload file
             pass
 

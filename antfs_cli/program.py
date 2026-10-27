@@ -89,10 +89,8 @@ class Device:
                 )
 
         # Create directories
-        utilities.makedirs_if_not_exists(self._path)
         for directory in _directories:
-            directory_path = os.path.join(self._path, directory)
-            utilities.makedirs_if_not_exists(directory_path)
+            os.makedirs(os.path.join(self._path, directory), exist_ok=True)
 
         # Write profile version (If none)
         path = os.path.join(self._path, self._PROFILE_VERSION_FILE)
@@ -114,8 +112,7 @@ class Device:
         try:
             with open(path, "rb") as f:
                 return int(f.read())
-        except IOError as e:
-            # TODO
+        except FileNotFoundError:
             return 0
 
     def read_passkey(self):
@@ -124,7 +121,7 @@ class Device:
                 d = array.array("B", f.read())
                 _logger.debug("loaded authfile: %r", d)
                 return d
-        except:
+        except FileNotFoundError:
             return None
 
     def write_passkey(self, passkey):
@@ -143,7 +140,7 @@ class AntFSCLI(Application):
 
         # Set up scripting
         scripts_dir = os.path.join(self.config_dir, "scripts")
-        utilities.makedirs_if_not_exists(scripts_dir)
+        os.makedirs(scripts_dir, exist_ok=True)
         self.scriptr = scripting.Runner(scripts_dir)
 
         self._device = None
@@ -173,7 +170,7 @@ class AntFSCLI(Application):
         self._device = Device(self.config_dir, serial, name)
 
         passkey = self._device.read_passkey()
-        print("Authenticating with", name, "(" + str(serial) + ")")
+        print(f"Authenticating with {name} ({serial})")
         _logger.debug("serial %s, %r, %r", name, serial, passkey)
 
         if passkey is not None and not self._pair:
@@ -183,7 +180,7 @@ class AntFSCLI(Application):
                 self.authentication_passkey(passkey)
                 print("OK")
                 return True
-            except AntFSAuthenticationException as e:
+            except AntFSAuthenticationException:
                 print("FAILED")
                 return False
         else:
@@ -194,7 +191,7 @@ class AntFSCLI(Application):
                 self._device.write_passkey(passkey)
                 print("OK")
                 return True
-            except AntFSAuthenticationException as e:
+            except AntFSAuthenticationException:
                 print("FAILED")
                 return False
 
@@ -203,8 +200,8 @@ class AntFSCLI(Application):
         # Adjust time
         print(" - Set time:", end=" ")
         try:
-            result = self.set_time()
-        except (AntFSTimeException, AntFSDownloadException, AntFSUploadException) as e:
+            self.set_time()
+        except (AntFSTimeException, AntFSDownloadException, AntFSUploadException):
             print("FAILED")
             _logger.exception("Could not set time")
         else:
@@ -221,29 +218,9 @@ class AntFSCLI(Application):
                 if os.path.splitext(filename)[1].lower() == ".fit":
                     local_files.append((filename, filetype))
 
-        # Map remote filenames to FIT file objects
-        remote_files = []
-        for fil in directory.get_files():
-            if fil.get_fit_sub_type() in _filetypes and fil.is_readable():
-                remote_files.append((self.get_filename(fil), fil))
-
-        # Calculate remote and local file diff
-        local_names = set(name for (name, filetype) in local_files)
-        remote_names = set(name for (name, fil) in remote_files)
-        downloading = [
-            fil
-            for name, fil in remote_files
-            if name not in local_names or not fil.is_archived()
-        ]
-        uploading = [
-            (name, filetype)
-            for name, filetype in local_files
-            if name not in remote_names
-        ]
-
-        # Remove archived files from the list
-        if self._skip_archived:
-            downloading = [fil for fil in downloading if not fil.is_archived()]
+        downloading, uploading = plan_sync(
+            local_files, directory.get_files(), self._skip_archived
+        )
 
         print("Downloading", len(downloading), "file(s)")
         if self._uploading:
@@ -277,22 +254,15 @@ class AntFSCLI(Application):
                 except Exception as e:
                     print(" - Failed", index, filename, e)
 
-    def get_filename(self, fil):
-        return "{0}_{1}_{2}.fit".format(
-            fil.get_date().strftime("%Y-%m-%d_%H-%M-%S"),
-            fil.get_fit_sub_type(),
-            fil.get_fit_file_number(),
-        )
-
     def get_filepath(self, fil):
         return os.path.join(
             self._device.get_path(),
             _filetypes[fil.get_fit_sub_type()],
-            self.get_filename(fil),
+            get_filename(fil),
         )
 
     def download_file(self, fil):
-        sys.stdout.write("Downloading {0}: ".format(self.get_filename(fil)))
+        sys.stdout.write(f"Downloading {get_filename(fil)}: ")
         sys.stdout.flush()
         data = self.download(fil.get_index(), AntFSCLI._get_progress_callback())
         with open(self.get_filepath(fil), "wb") as fd:
@@ -303,7 +273,7 @@ class AntFSCLI(Application):
         self.scriptr.run_download(self.get_filepath(fil), fil.get_fit_sub_type())
 
     def upload_file(self, typ, filename):
-        sys.stdout.write("Uploading {0}: ".format(filename))
+        sys.stdout.write(f"Uploading {filename}: ")
         sys.stdout.flush()
         with open(
             os.path.join(self._device.get_path(), _filetypes[typ], filename), "rb"
@@ -325,12 +295,51 @@ class AntFSCLI(Application):
             else:
                 delta = time.time() - start_time
                 eta = datetime.timedelta(seconds=int(delta / new_progress - delta))
-                s += " ETA: {0}".format(eta)
+                s += f" ETA: {eta}"
             sys.stdout.write(s)
             sys.stdout.flush()
             sys.stdout.write("\b" * len(s))
 
         return callback
+
+
+def get_filename(fil):
+    """Local filename for a remote FIT file.
+
+    The download/upload diff in plan_sync matches local and remote files by
+    this name, so changing the format makes every file look new."""
+    date = fil.get_date().strftime("%Y-%m-%d_%H-%M-%S")
+    return f"{date}_{fil.get_fit_sub_type()}_{fil.get_fit_file_number()}.fit"
+
+
+def plan_sync(local_files, remote_files, skip_archived=False):
+    """Work out which files to download and which to upload.
+
+    local_files is a list of (filename, fit_type) for FIT files on disk and
+    remote_files is the device's directory listing. Returns the remote file
+    objects to download and the (filename, fit_type) pairs to upload.
+
+    A remote file is downloaded if it is missing locally, or if the device
+    has not marked it as archived yet (it may still be changing). With
+    skip_archived, archived files are never downloaded."""
+    remote = [
+        (get_filename(fil), fil)
+        for fil in remote_files
+        if fil.get_fit_sub_type() in _filetypes and fil.is_readable()
+    ]
+    local_names = {name for name, _ in local_files}
+    remote_names = {name for name, _ in remote}
+
+    downloading = [
+        fil for name, fil in remote if name not in local_names or not fil.is_archived()
+    ]
+    if skip_archived:
+        downloading = [fil for fil in downloading if not fil.is_archived()]
+
+    uploading = [
+        (name, fit_type) for name, fit_type in local_files if name not in remote_names
+    ]
+    return downloading, uploading
 
 
 def main():
@@ -353,8 +362,7 @@ def main():
     # Set up config dir
     config_dir = utilities.XDG(AntFSCLI.PRODUCT_NAME).get_config_dir()
     logs_dir = os.path.join(config_dir, "logs")
-    utilities.makedirs_if_not_exists(config_dir)
-    utilities.makedirs_if_not_exists(logs_dir)
+    os.makedirs(logs_dir, exist_ok=True)
 
     # Set up logging
     _logger.setLevel(logging.DEBUG)
@@ -369,7 +377,7 @@ def main():
 
     log_filename = os.path.join(
         logs_dir,
-        "{0}-{1}.log".format(time.strftime("%Y%m%d-%H%M%S"), AntFSCLI.PRODUCT_NAME),
+        f"{time.strftime('%Y%m%d-%H%M%S')}-{AntFSCLI.PRODUCT_NAME}.log",
     )
     handler = logging.FileHandler(log_filename, "w")
     handler.setFormatter(formatter)
@@ -393,12 +401,13 @@ def main():
             "and let all your files be redownloaded from your sports "
             "watch." % (e, AntFSCLI.PRODUCT_NAME, AntFSCLI.PRODUCT_NAME)
         )
+        return 1
     except (Exception, KeyboardInterrupt) as e:
         traceback.print_exc()
-        for line in traceback.format_exc().splitlines():
-            _logger.error("%r", line)
+        _logger.exception("Interrupted")
         print("Interrupted:", str(e))
         return 1
+    return 0
 
 
 if __name__ == "__main__":
