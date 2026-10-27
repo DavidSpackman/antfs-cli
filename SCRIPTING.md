@@ -22,7 +22,7 @@ The three arguments to the executables are:
 
  - File name
 
- - FIT type (e.g. 4 for an Activity, see File.Identifier in ant/fs/file.py
+ - FIT type (e.g. 4 for an Activity, see File.Identifier in openant/fs/file.py
    for other FIT file types)
 
 Note: Do not modify, delete, or rename the original file. If you want to

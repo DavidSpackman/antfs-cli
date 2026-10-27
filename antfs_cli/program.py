@@ -346,8 +346,14 @@ def main():
     parser = ArgumentParser(
         description="Extracts FIT files from ANT-FS based sport watches."
     )
-    parser.add_argument("--upload", action="store_true", help="enable uploading")
-    parser.add_argument("--debug", action="store_true", help="enable debug")
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="also copy FIT files that are only stored locally to the watch",
+    )
+    parser.add_argument(
+        "--debug", action="store_true", help="also print the debug log to the terminal"
+    )
     parser.add_argument(
         "--pair", action="store_true", help="force pairing even if already paired"
     )

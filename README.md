@@ -1,40 +1,60 @@
 ANT-FS Command Line Interface
 =============================
 
-[![Build Status](https://github.com/Tigge/antfs-cli/workflows/Build/badge.svg?branch=master)](https://github.com/Tigge/antfs-cli/actions)
-[![Coveralls branch](https://img.shields.io/coveralls/Tigge/antfs-cli/master.svg)](https://coveralls.io/r/Tigge/antfs-cli?branch=master)
+[![Build Status](https://github.com/DavidSpackman/antfs-cli/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/DavidSpackman/antfs-cli/actions/workflows/build.yml)
+[![Coverage Status](https://coveralls.io/repos/github/DavidSpackman/antfs-cli/badge.svg?branch=master)](https://coveralls.io/github/DavidSpackman/antfs-cli?branch=master)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-This program (`antfs-cli`) extracts all activity FIT files from a device and
-writes them to a folder (see file locations below). The first time it runs it
-attempts to sync with the watch. This produces an `authfile` which is written
-to the same folder. On startup this program will try to read that file to
-avoid having to re-sync.
+This program (`antfs-cli`) downloads the FIT files (activities, courses,
+settings, totals and so on) from an ANT-FS sports watch, such as an older
+Garmin Forerunner, using an ANT USB stick, and stores them in a folder (see
+file locations below). After each download it can run your own scripts, for
+example to upload new activities to Garmin Connect.
+
+The first time it runs it pairs with the watch and saves the result in an
+`authfile` next to the downloaded files, so later runs don't need to pair
+again.
+
+This is a fork of [Tigge/antfs-cli](https://github.com/Tigge/antfs-cli).
 
 Requirements
 ------------
 
-- Python 3.10 or newer
+- Python 3.10 or newer (3.12 or newer for the Garmin Connect upload script)
+- An ANT USB stick (see supported devices below)
 - [openant >= 1.3](https://github.com/Tigge/openant) (installed automatically)
 
 Installation
 ------------
 
-From a checkout of this repository, run `pipx install .` (or
-`pip install --user .`) to install ANT-FS Command Line Interface. This will
-install an `antfs-cli` command on your `PATH`.
+From a checkout of this repository:
 
+    python3 -m pip install --user ".[upload]"
 
-Linux only needs one extra step so the ANT USB stick can be used without
-root: install openant's udev rule
-([42-ant-usb-sticks.rules](https://github.com/Tigge/openant/blob/master/resources/42-ant-usb-sticks.rules))
-into `/etc/udev/rules.d/`, then run `sudo udevadm control --reload-rules`
-and re-plug the stick.
+This installs the `antfs-cli` command (in `~/.local/bin`) together with the
+dependency of the Garmin Connect upload script, for the same `python3` that the
+upload scripts run with. Leave out `[upload]` if you won't upload to Garmin
+Connect. If `python3 -m pip` is missing, install pip first (on Fedora:
+`sudo dnf install python3-pip`).
 
-The rule gives access to the `plugdev` group (and to whoever is logged in at
-the desktop). Some distributions, such as Fedora, have no `plugdev` group, and
-udev then ignores the whole rule. Create it and add yourself, then log out and
-back in:
+`pipx install .` also works for `antfs-cli` itself, but the upload scripts
+can't see packages installed inside the pipx environment.
+
+### USB permissions (Linux)
+
+To use the ANT USB stick without root, install openant's udev rule
+([42-ant-usb-sticks.rules](https://github.com/Tigge/openant/blob/master/resources/42-ant-usb-sticks.rules)):
+
+    sudo curl -o /etc/udev/rules.d/42-ant-usb-sticks.rules \
+        https://raw.githubusercontent.com/Tigge/openant/master/resources/42-ant-usb-sticks.rules
+    sudo udevadm control --reload-rules
+
+then re-plug the stick.
+
+The rule gives access to the `plugdev` group, and to whoever is logged in at
+the desktop. Some distributions, such as Fedora, have no `plugdev` group, and
+udev then ignores the whole rule. Create the group and add yourself, then log
+out and back in:
 
     sudo groupadd -r plugdev
     sudo usermod -aG plugdev $USER
@@ -46,8 +66,9 @@ Usage
 
     options:
       -h, --help           show this help message and exit
-      --upload             enable uploading
-      --debug              enable debug
+      --upload             also copy FIT files that are only stored locally to the
+                           watch
+      --debug              also print the debug log to the terminal
       --pair               force pairing even if already paired
       -a, --skip-archived  don't download files marked as 'archived' on the watch
 
@@ -68,8 +89,8 @@ On each run, `antfs-cli`:
    to websites; see below for that.
 
 Use `--pair` if the watch has forgotten the pairing (authentication fails
-every time), and `--debug` to see the full log on the terminal. A log of every
-run is always written to the `logs` folder (see file locations below).
+every time). A log of every run is written to the `logs` folder (see file
+locations below), whether or not you use `--debug`.
 
 Uploading activities to websites
 --------------------------------
@@ -79,7 +100,8 @@ Uploading is done by hook scripts that `antfs-cli` runs after every download
 activities, and treat an activity that is already on the website as a success.
 
 The scripts run with `python3` from your `PATH`, so install their dependencies
-for that Python (`pip install --user ...`), not inside a pipx environment.
+for that Python (`python3 -m pip install --user ...`), not inside a pipx
+environment.
 
 ### Garmin Connect
 
@@ -88,18 +110,23 @@ which needs Python 3.12 or newer. Garmin has no official API for this, so it
 may break if Garmin changes its login again; upgrading `garminconnect` usually
 fixes that.
 
- 1. Install the dependency
+ 1. Install the dependency (already done if you installed with `[upload]`)
     ```
-    pip install --user garminconnect
+    python3 -m pip install --user garminconnect
     ```
- 2. Log in once (asks for your email, password and, if enabled, MFA code)
+ 2. Copy the script into place
     ```
-    ./scripts/40-upload_to_garmin_connect.py
+    mkdir -p ~/.config/antfs-cli/scripts
+    cp scripts/40-upload_to_garmin_connect.py ~/.config/antfs-cli/scripts/
+    ```
+ 3. Log in once. It asks for your Garmin Connect email, password and, if
+    two-step verification is on, the code Garmin sends you
+    ```
+    ~/.config/antfs-cli/scripts/40-upload_to_garmin_connect.py
     ```
     Only login tokens are stored (in `~/.config/antfs-cli/garmin-tokens/`),
-    not your password. Run it again if it ever says the login has expired.
- 3. Copy `scripts/40-upload_to_garmin_connect.py` into
-    `~/.config/antfs-cli/scripts/` and make sure it is still executable.
+    not your password. They renew themselves; run the script by hand again
+    only if it says the login has expired.
 
 Activities uploaded this way are treated like ones synced from the watch, so
 if Garmin Connect is linked to Strava (or other services) they are passed on
@@ -114,35 +141,42 @@ or newer.
 
  1. Install the dependency
     ```
-    pip install --user stravalib
+    python3 -m pip install --user stravalib
     ```
  2. Create your own API application at
     <https://www.strava.com/settings/api> and set its "Authorization Callback
     Domain" to `localhost`.
- 3. Log in once: enter the app's Client ID and Client Secret, then open the
+ 3. Copy the script into place
+    ```
+    mkdir -p ~/.config/antfs-cli/scripts
+    cp scripts/40-upload_to_strava.py ~/.config/antfs-cli/scripts/
+    ```
+ 4. Log in once: enter the app's Client ID and Client Secret, then open the
     link it prints and approve access
     ```
-    ./scripts/40-upload_to_strava.py
+    ~/.config/antfs-cli/scripts/40-upload_to_strava.py
     ```
     The app details and tokens are stored in `~/.config/antfs-cli/strava.json`.
- 4. Copy `scripts/40-upload_to_strava.py` into
-    `~/.config/antfs-cli/scripts/` and make sure it is still executable.
 
 File locations
 --------------
 
-### Simple answer (probably correct for most people)
+Everything is stored in `~/.config/antfs-cli/` (more precisely
+`$XDG_CONFIG_HOME/antfs-cli/`, with `~/.config` used when `$XDG_CONFIG_HOME`
+is not set):
 
-Your files are placed in `~/.config/antfs-cli/`
+| Path                   | Contents                                                       |
+|------------------------|----------------------------------------------------------------|
+| `<serial>/`            | One folder per watch, named after its serial number            |
+| `<serial>/authfile`    | Pairing key for that watch                                     |
+| `<serial>/activities/` | Downloaded activities; `courses/`, `settings/`, `totals/` and so on hold the other FIT file types |
+| `scripts/`             | Hook scripts run after each download (see [SCRIPTING.md](SCRIPTING.md)) |
+| `logs/`                | A log of every run                                             |
+| `garmin-tokens/`       | Garmin Connect login tokens (upload script)                    |
+| `strava.json`          | Strava app details and tokens (upload script)                  |
 
-### Long answer
-
-FIT files and authfiles are stored in an the location specified by the XDG
-Base Directory specification. It uses the `$XDG_CONFIG_HOME` with
-`$HOME/.config` as backup. In this directory a `antfs-cli` folder is created
-in which a folder for each device is created. Both the `.FIT` files and
-`authfile` are stored in this device-specific folder. All logs are stored
-in a `logs` subfolder of the `antfs-cli` directory.
+The token files give access to your accounts, so they are only readable by
+you. Deleting them logs the upload scripts out.
 
 Supported devices
 -----------------
@@ -162,7 +196,7 @@ watches sync over USB, Wi-Fi or Bluetooth instead and won't be found by
 
 ### ANT-FS Devices
 
-Any compliant ANT-FS device should in theory work, but those specific devices
+Any compliant ANT-FS device should in theory work, but these specific devices
 have been reported as working:
 
  - Garmin Forerunner 60
@@ -173,4 +207,4 @@ have been reported as working:
  - Garmin FR70
  - Garmin Swim
 
-Please let me know if you have any success with devices that are not listed here.
+Please open an issue if you have success with a device that is not listed here.

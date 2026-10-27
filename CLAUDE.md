@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```sh
-pip install -e .                         # installs openant and the `antfs-cli` entry point
+python3 -m pip install -e .              # installs openant and the `antfs-cli` entry point
 
 python3 -m unittest discover tests        # run all tests
 python3 -m unittest tests.test_utilities.BasicUtilityTest.test_config_dir   # single test
@@ -32,8 +32,8 @@ Running the program for real requires an ANT USB stick and a watch in range; the
   - `Device` owns the per-device folder `<config_dir>/<serial>/` and a `profile_version` file. A mismatch with `Device._PROFILE_VERSION` raises `ProfileVersionException`; bump it only if the on-disk layout changes incompatibly.
 - `antfs_cli/scripting.py` — `Runner` executes every file in `<config_dir>/scripts/` (sorted, so the `40-` prefixes set ordering) in a background thread after each download, with args `ACTION FILENAME FIT_TYPE`. Contract is documented in `SCRIPTING.md`. Only `run_download` is currently called.
 - `antfs_cli/utilities.py` — XDG config/data dir resolution.
-- `scripts/` — user hook scripts (TCX conversion, Garmin Connect / Strava upload). They are not part of the package; users copy them into the scripts dir, and they run under whatever `python3` is on `PATH`, not antfs-cli's environment. Each is standalone: run with no arguments for an interactive one-off login that stores tokens under the config dir, run by `Runner` to upload, and only acts on `DOWNLOAD` of FIT type `4` (activity). They `flock` their token store because `Runner` starts them concurrently. CI doesn't install or test them.
+- `scripts/` — user hook scripts (TCX conversion, Garmin Connect / Strava upload). They are not part of the package; users copy them into the scripts dir, and they run under whatever `python3` is on `PATH`, not antfs-cli's environment. All only act on `DOWNLOAD` of FIT type `4` (activity). The two upload scripts are standalone: run with no arguments for an interactive one-off login that stores tokens under the config dir (never the password), or by `Runner` to upload; they `flock` their token store because `Runner` starts them concurrently. CI doesn't install or test them.
   - Garmin Connect upload is the main reason this fork is maintained. It uses `garminconnect` (python-garminconnect); `garmin-uploader` and `garth` are dead or deprecated after Garmin auth changes, so don't switch back to them. Use `upload_activity` (treated as a device sync, so Garmin forwards to Strava), not `import_activity`.
   - `--upload` on the CLI means uploading local FIT files *to the watch*; it is unrelated to these scripts.
 
-Data and logs live under `$XDG_CONFIG_HOME/antfs-cli/` (default `~/.config/antfs-cli/`); each run writes a timestamped debug log to its `logs/` subfolder, and `--debug` also echoes logging to stderr.
+Data and logs live under `$XDG_CONFIG_HOME/antfs-cli/` (default `~/.config/antfs-cli/`), and README's "File locations" section lists what goes where; each run writes a timestamped debug log to its `logs/` subfolder, and `--debug` also echoes logging to stderr.

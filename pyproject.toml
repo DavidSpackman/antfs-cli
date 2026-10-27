@@ -32,7 +32,7 @@ upload = ["garminconnect>=0.3.20"]
 strava = ["stravalib>=2.6"]
 
 [project.urls]
-Homepage = "https://github.com/Tigge/antfs-cli"
+Homepage = "https://github.com/DavidSpackman/antfs-cli"
 
 [project.scripts]
 antfs-cli = "antfs_cli.program:main"
