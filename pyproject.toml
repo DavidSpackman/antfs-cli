@@ -27,7 +27,9 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-upload = ["garmin-uploader"]
+# Dependencies of the hook scripts in scripts/ (see README)
+upload = ["garminconnect>=0.3.20"]
+strava = ["stravalib>=2.6"]
 
 [project.urls]
 Homepage = "https://github.com/Tigge/antfs-cli"

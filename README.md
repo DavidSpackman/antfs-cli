@@ -25,54 +25,108 @@ From a checkout of this repository, run `pipx install .` (or
 install an `antfs-cli` command on your `PATH`.
 
 
+Linux only needs one extra step so the ANT USB stick can be used without
+root: install openant's udev rule
+([42-ant-usb-sticks.rules](https://github.com/Tigge/openant/blob/master/resources/42-ant-usb-sticks.rules))
+into `/etc/udev/rules.d/`, then run `sudo udevadm control --reload-rules`
+and re-plug the stick.
+
+The rule gives access to the `plugdev` group (and to whoever is logged in at
+the desktop). Some distributions, such as Fedora, have no `plugdev` group, and
+udev then ignores the whole rule. Create it and add yourself, then log out and
+back in:
+
+    sudo groupadd -r plugdev
+    sudo usermod -aG plugdev $USER
+
 Usage
 -----
 
-    Usage: antfs-cli [options]
+    usage: antfs-cli [-h] [--upload] [--debug] [--pair] [-a]
 
-    Options:
-      -h, --help  show this help message and exit
-      --upload    enable uploading
-      --debug     enable debug
+    options:
+      -h, --help           show this help message and exit
+      --upload             enable uploading
+      --debug              enable debug
+      --pair               force pairing even if already paired
+      -a, --skip-archived  don't download files marked as 'archived' on the watch
 
-Upload to Garmin Connect
-------------------------
+Run `antfs-cli` with the ANT USB stick plugged in and the watch nearby (on
+most watches, in its sync/pairing mode). On the first run, confirm the pairing
+request on the watch.
 
-This program can upload automatically the activities from your watch to [Garmin Connect](https://connect.garmin.com) by using [garmin-uploader](https://github.com/La0/garmin-uploader).
+On each run, `antfs-cli`:
 
-To setup the activity upload, follow these steps:
+ - sets the watch's clock,
+ - downloads every FIT file it doesn't have yet. Files the watch has not yet
+   marked as archived are downloaded again each time, since they may still
+   change. Use `--skip-archived` to download only files that have never been
+   archived on the watch.
+ - with `--upload`, copies FIT files that exist locally but not on the watch
+   (for example a course or workout you put in the device's `courses` or
+   `workouts` folder) **to the watch**. This has nothing to do with uploading
+   to websites; see below for that.
 
- 1. Install upload extra dependecies
+Use `--pair` if the watch has forgotten the pairing (authentication fails
+every time), and `--debug` to see the full log on the terminal. A log of every
+run is always written to the `logs` folder (see file locations below).
+
+Uploading activities to websites
+--------------------------------
+
+Uploading is done by hook scripts that `antfs-cli` runs after every download
+(see [SCRIPTING.md](SCRIPTING.md)). The scripts in `scripts/` only upload
+activities, and treat an activity that is already on the website as a success.
+
+The scripts run with `python3` from your `PATH`, so install their dependencies
+for that Python (`pip install --user ...`), not inside a pipx environment.
+
+### Garmin Connect
+
+Uses [python-garminconnect](https://github.com/cyberjunky/python-garminconnect),
+which needs Python 3.12 or newer. Garmin has no official API for this, so it
+may break if Garmin changes its login again; upgrading `garminconnect` usually
+fixes that.
+
+ 1. Install the dependency
     ```
-    pip install --user ".[upload]"
+    pip install --user garminconnect
     ```
- 2. Setup your Garmin Connect credentials in `~/.guploadrc`
+ 2. Log in once (asks for your email, password and, if enabled, MFA code)
     ```
-    [Credentials]
-    username=yourgarminuser
-    password=yourgarminpass
+    ./scripts/40-upload_to_garmin_connect.py
     ```
- 3. Copy the file `scripts/40-upload_to_garmin_connect.py` into the directory `~/.config/antfs-cli/scripts`
-    Make sure it is still executable.
+    Only login tokens are stored (in `~/.config/antfs-cli/garmin-tokens/`),
+    not your password. Run it again if it ever says the login has expired.
+ 3. Copy `scripts/40-upload_to_garmin_connect.py` into
+    `~/.config/antfs-cli/scripts/` and make sure it is still executable.
 
-Now after every successful activity download from your watch, the activity will be uploaded to Garmin Connect.
+Activities uploaded this way are treated like ones synced from the watch, so
+if Garmin Connect is linked to Strava (or other services) they are passed on
+as usual.
 
-Upload to Strava
-------------------------
-This program can upload automatically the activities from your watch to [Strava](https://strava.com) by using [stravalib](https://github.com/hozn/stravalib) and [drpexe-uploader](https://github.com/mscansian/drpexe-uploader).
+### Strava
 
-To setup the activity upload, follow these steps:
+You don't need this if Garmin Connect already forwards your activities to
+Strava; using both creates duplicates. It uses
+[stravalib](https://github.com/stravalib/stravalib), which needs Python 3.11
+or newer.
 
- 1. Install upload extra dependecies
+ 1. Install the dependency
     ```
     pip install --user stravalib
     ```
- 2. Run the script `scripts/40-upload_to_strava.py` to fetch your Strava credentials. Follow the instructions to authorize [drpexe-uploader](https://github.com/mscansian/drpexe-uploader) to upload files on your behalf.
+ 2. Create your own API application at
+    <https://www.strava.com/settings/api> and set its "Authorization Callback
+    Domain" to `localhost`.
+ 3. Log in once: enter the app's Client ID and Client Secret, then open the
+    link it prints and approve access
     ```
     ./scripts/40-upload_to_strava.py
     ```
- 3. Copy the file `scripts/40-upload_to_strava.py` into the directory `~/.config/antfs-cli/scripts`
-    Make sure it is still executable.
+    The app details and tokens are stored in `~/.config/antfs-cli/strava.json`.
+ 4. Copy `scripts/40-upload_to_strava.py` into
+    `~/.config/antfs-cli/scripts/` and make sure it is still executable.
 
 File locations
 --------------
@@ -94,6 +148,10 @@ Supported devices
 -----------------
 
 Any device supported by [openant](https://github.com/Tigge/openant) should work.
+
+ANT-FS was mainly used by Garmin watches from around 2008 to 2013. Most newer
+watches sync over USB, Wi-Fi or Bluetooth instead and won't be found by
+`antfs-cli`; for those, copy the FIT files off the watch over USB.
 
 ### ANT USB Sticks
 

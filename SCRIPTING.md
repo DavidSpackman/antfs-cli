@@ -6,7 +6,14 @@ In the location for scripts, usually ~/.config/antfs-cli/scripts
 and programs.
 
 The scripts and programs placed here will be executed in the background when
-a file have been downloaded, uploaded or deleted.
+a file has been downloaded. (Upload and delete actions are defined below but
+not currently triggered by `antfs-cli`.)
+
+Every file in the folder is run, in alphabetical order, so a numeric prefix
+such as `40-` sets the order. Each must be executable (`chmod +x`) and start
+with a `#!` line. Each downloaded file gets its own background run of the
+scripts, so several runs can happen at the same time; a script that keeps
+state (such as login tokens) should lock it.
 
 The three arguments to the executables are:
 
@@ -25,7 +32,7 @@ file.
 Example
 ---------------------
 
-    #!/usr/bin/python
+    #!/usr/bin/env python3
 
     import sys
 
