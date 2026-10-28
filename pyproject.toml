@@ -1,7 +1,45 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "antfs-cli"
+version = "0.4"
+description = "ANT-FS Command Line Interface"
+readme = "README.md"
+license = { file = "LICENCE" }
+authors = [{ name = "Gustav Tiger", email = "gustav@tiger.name" }]
+requires-python = ">=3.10"
+dependencies = ["openant>=1.3"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+[project.optional-dependencies]
+# Dependencies of the hook scripts in scripts/ (see README)
+upload = ["garminconnect>=0.3.20"]
+strava = ["stravalib>=2.6"]
+
+[project.urls]
+Homepage = "https://github.com/DavidSpackman/antfs-cli"
+
+[project.scripts]
+antfs-cli = "antfs_cli.program:main"
+
+[tool.setuptools]
+packages = ["antfs_cli"]
 
 [tool.black]
 line-length = 88
-target-version = ['py37']
+target-version = ["py310"]

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Script to run the FIT-to-TCX converter on every new FIT file that is being
 # downloaded by antfs-cli. Installation of https://github.com/Tigge/FIT-to-TCX
@@ -41,10 +41,7 @@ def main(action, filename, fit_type):
 
     # Create directory
     targetdir = os.path.join(basedir, "activities_tcx")
-    try:
-        os.mkdir(targetdir)
-    except:
-        pass
+    os.makedirs(targetdir, exist_ok=True)
 
     targetfile = os.path.splitext(basefile)[0] + ".tcx"
 
@@ -53,7 +50,7 @@ def main(action, filename, fit_type):
         process = subprocess.Popen(
             ["fittotcx", filename], stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        (data, _) = process.communicate()
+        data, _ = process.communicate()
     except OSError as e:
         print(
             "Could not run Convert to TCX - fittotcx",
@@ -68,9 +65,8 @@ def main(action, filename, fit_type):
         return -1
 
     # Write result
-    f = open(os.path.join(targetdir, targetfile), "w")
-    f.write(data)
-    f.close()
+    with open(os.path.join(targetdir, targetfile), "wb") as f:
+        f.write(data)
     return 0
 
 
