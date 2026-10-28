@@ -200,7 +200,10 @@ class AntFSCLI(Application):
         # Adjust time
         print(" - Set time:", end=" ")
         try:
-            self.set_time()
+            # openant's default is timezone-aware (and fixed at import time),
+            # but it subtracts a naive epoch, so pass naive UTC explicitly.
+            now = datetime.datetime.now(datetime.timezone.utc)
+            self.set_time(now.replace(tzinfo=None))
         except (AntFSTimeException, AntFSDownloadException, AntFSUploadException):
             print("FAILED")
             _logger.exception("Could not set time")
