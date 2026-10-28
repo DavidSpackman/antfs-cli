@@ -1,9 +1,11 @@
 import array
 import datetime
 import os
+import queue
 import tempfile
 import unittest
 
+from openant.fs.beacon import Beacon
 from openant.fs.file import File
 
 from antfs_cli import program
@@ -134,3 +136,100 @@ class DeviceTest(unittest.TestCase):
         os.makedirs(os.path.join(self.basedir, "1234"))
         with self.assertRaises(program.Device.ProfileVersionException):
             program.Device(self.basedir, 1234, "Forerunner")
+
+
+def make_fit(records=b"\x40\x00\x00\x00\x00\x00"):
+    header = bytes([12, 0x10, 0x83, 0x00]) + len(records).to_bytes(4, "little")
+    body = header + b".FIT" + records
+    return body + program._fit_crc(body).to_bytes(2, "little")
+
+
+class IsValidFitTest(unittest.TestCase):
+    def test_valid_file(self):
+        self.assertTrue(program.is_valid_fit(make_fit()))
+
+    def test_crc_of_known_data(self):
+        # Reference value from the FIT SDK's CRC routine.
+        self.assertEqual(program._fit_crc(b"123456789"), 0xBB3D)
+
+    def test_bad_checksum(self):
+        data = bytearray(make_fit())
+        data[13] ^= 0xFF
+        self.assertFalse(program.is_valid_fit(bytes(data)))
+
+    def test_truncated(self):
+        self.assertFalse(program.is_valid_fit(make_fit()[:-3]))
+
+    def test_tail_of_another_file(self):
+        self.assertFalse(program.is_valid_fit(make_fit()[5:]))
+
+    def test_empty(self):
+        self.assertFalse(program.is_valid_fit(b""))
+
+
+LINK = Beacon.ClientDeviceState.LINK
+AUTH = Beacon.ClientDeviceState.AUTHENTICATION
+TRANSPORT = Beacon.ClientDeviceState.TRANSPORT
+
+
+class FakeBeacon:
+    def __init__(self, state):
+        self.state = state
+
+    def get_client_device_state(self):
+        return self.state
+
+
+class SessionTest(unittest.TestCase):
+    """AntFSCLI._main never leaves the watch stuck in a session."""
+
+    def make_cli(self, *states):
+        cli = object.__new__(program.AntFSCLI)
+        cli._beacons = queue.Queue()
+        for state in states:
+            cli._beacons.put(FakeBeacon(state))
+        cli.calls = []
+        cli.disconnect = lambda: cli.calls.append("disconnect")
+        cli.stop = lambda: cli.calls.append("stop")
+        cli.on_link = lambda beacon: cli.calls.append("link") or True
+        cli.on_authentication = lambda beacon: cli.calls.append("auth") or True
+        cli.on_transport = lambda beacon: cli.calls.append("transport")
+        return cli
+
+    def test_normal_sync(self):
+        cli = self.make_cli(LINK, AUTH, TRANSPORT)
+        cli._main()
+        self.assertEqual(cli.calls, ["link", "auth", "transport", "disconnect", "stop"])
+
+    def test_ends_session_left_open_by_earlier_run(self):
+        cli = self.make_cli(TRANSPORT, TRANSPORT, LINK, AUTH, TRANSPORT)
+        cli._main()
+        self.assertEqual(
+            cli.calls,
+            ["disconnect", "link", "auth", "transport", "disconnect", "stop"],
+        )
+
+    def test_disconnects_when_sync_fails(self):
+        cli = self.make_cli(LINK, AUTH, TRANSPORT)
+
+        def fail(beacon):
+            raise RuntimeError("radio trouble")
+
+        cli.on_transport = fail
+        with self.assertRaises(RuntimeError):
+            cli._main()
+        self.assertEqual(cli.calls, ["link", "auth", "disconnect", "stop"])
+
+    def test_failed_disconnect_does_not_hide_error(self):
+        cli = self.make_cli(LINK, AUTH)
+
+        def fail(*args):
+            raise RuntimeError("radio trouble")
+
+        cli.on_authentication = fail
+        cli.disconnect = fail
+        with (
+            self.assertLogs(level="WARNING"),
+            self.assertRaisesRegex(RuntimeError, "radio trouble"),
+        ):
+            cli._main()

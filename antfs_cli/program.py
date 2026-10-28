@@ -28,6 +28,7 @@ import datetime
 import time
 from argparse import ArgumentParser
 import os
+import queue
 import sys
 import traceback
 
@@ -36,10 +37,13 @@ from openant.fs.manager import (
     AntFSAuthenticationException,
     AntFSTimeException,
     AntFSDownloadException,
+    AntFSException,
 )
 from openant.fs.manager import AntFSUploadException
+from openant.fs.beacon import Beacon
 from openant.fs.file import File
 
+from . import openant_fixes
 from . import utilities
 from . import scripting
 
@@ -147,6 +151,18 @@ class AntFSCLI(Application):
         self._uploading = args.upload
         self._pair = args.pair
         self._skip_archived = args.skip_archived
+        self.beacon_state = None
+        self.last_command = None
+
+    def _on_beacon(self, data):
+        Application._on_beacon(self, data)
+        self.beacon_state = Beacon.parse(data).get_client_device_state()
+
+    def _get_command(self, timeout=15.0):
+        return openant_fixes.get_command(self, timeout)
+
+    def _send_command(self, c):
+        openant_fixes.send_command(self, c)
 
     def setup_channel(self, channel):
         channel.set_period(4096)
@@ -158,6 +174,61 @@ class AntFSCLI(Application):
         channel.open()
         # channel.request_message(Message.ID.RESPONSE_CHANNEL_STATUS)
         print("Searching...")
+
+    def _main(self):
+        # openant's loop, except that the watch is never left stuck in a
+        # session: one left open by an earlier run is ended first, and on an
+        # error the watch is told to go back to waiting for a link.
+        linked = False
+        try:
+            _logger.debug("Link level")
+            beacon = self._get_beacon()
+            if beacon.get_client_device_state() != Beacon.ClientDeviceState.LINK:
+                beacon = self._end_stale_session()
+            if self.on_link(beacon):
+                linked = True
+                for _ in range(5):
+                    beacon = self._get_beacon()
+                    if (
+                        beacon.get_client_device_state()
+                        == Beacon.ClientDeviceState.AUTHENTICATION
+                    ):
+                        _logger.debug("Auth layer")
+                        if self.on_authentication(beacon):
+                            _logger.debug("Authenticated")
+                            beacon = self._get_beacon()
+                            self.on_transport(beacon)
+                        break
+        except BaseException:
+            if linked:
+                self._try_disconnect()
+            raise
+        else:
+            if linked:
+                self.disconnect()
+        finally:
+            self.stop()
+
+    def _end_stale_session(self):
+        print(" - Watch is still in an earlier session, ending it")
+        self.disconnect()
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                beacon = self._beacons.get(timeout=1)
+            except queue.Empty:
+                continue
+            if beacon.get_client_device_state() == Beacon.ClientDeviceState.LINK:
+                return beacon
+        raise AntFSException(
+            "The watch did not leave its earlier session; restart the watch"
+        )
+
+    def _try_disconnect(self):
+        try:
+            self.disconnect()
+        except Exception:
+            _logger.warning("Could not disconnect from the watch", exc_info=True)
 
     def on_link(self, beacon):
         _logger.debug("on link, %r, %r", beacon.get_serial(), beacon.get_descriptor())
@@ -268,10 +339,15 @@ class AntFSCLI(Application):
         sys.stdout.write(f"Downloading {get_filename(fil)}: ")
         sys.stdout.flush()
         data = self.download(fil.get_index(), AntFSCLI._get_progress_callback())
-        with open(self.get_filepath(fil), "wb") as fd:
-            data.tofile(fd)
         sys.stdout.write("\n")
         sys.stdout.flush()
+        if not is_valid_fit(data.tobytes()):
+            # Not saved, so the next sync tries again.
+            print(" - Corrupt download, skipped")
+            _logger.warning("Corrupt download of %s", get_filename(fil))
+            return
+        with open(self.get_filepath(fil), "wb") as fd:
+            data.tofile(fd)
 
         self.scriptr.run_download(self.get_filepath(fil), fil.get_fit_sub_type())
 
@@ -313,6 +389,31 @@ def get_filename(fil):
     this name, so changing the format makes every file look new."""
     date = fil.get_date().strftime("%Y-%m-%d_%H-%M-%S")
     return f"{date}_{fil.get_fit_sub_type()}_{fil.get_fit_file_number()}.fit"
+
+
+def _fit_crc(data):
+    table = (
+        0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
+        0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400,
+    )  # fmt: skip
+    crc = 0
+    for byte in data:
+        for nibble in (byte & 0xF, byte >> 4):
+            tmp = table[crc & 0xF]
+            crc = (crc >> 4) & 0x0FFF
+            crc ^= tmp ^ table[nibble]
+    return crc
+
+
+def is_valid_fit(data):
+    """Whether data is a complete FIT file with a matching checksum."""
+    if len(data) < 14 or data[8:12] != b".FIT":
+        return False
+    header_size = data[0]
+    data_size = int.from_bytes(data[4:8], "little")
+    if len(data) != header_size + data_size + 2:
+        return False
+    return _fit_crc(data[:-2]) == int.from_bytes(data[-2:], "little")
 
 
 def plan_sync(local_files, remote_files, skip_archived=False):
@@ -394,6 +495,8 @@ def main():
 
     if args.debug:
         _logger.addHandler(logging.StreamHandler())
+
+    openant_fixes.apply()
 
     try:
         g = AntFSCLI(config_dir, args)
